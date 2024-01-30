@@ -1,5 +1,6 @@
 package io.tus.java.client;
 
+import java.net.MalformedURLException;
 import java.net.Proxy;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -207,7 +208,11 @@ public class TusClient {
         connection.connect();
 
         int responseCode = connection.getResponseCode();
-        if (!(responseCode >= 200 && responseCode < 300)) {
+        if (responseCode >= 300 && responseCode < 400) {
+            uploadCreationURL = handleRedirect(responseCode, connection);
+            return createUpload(upload);
+        }
+        else if (!(responseCode >= 200 && responseCode < 300)) {
             throw new ProtocolException(
                     "unexpected status code (" + responseCode + ") while creating upload", connection);
         }
@@ -302,7 +307,11 @@ public class TusClient {
         connection.connect();
 
         int responseCode = connection.getResponseCode();
-        if (!(responseCode >= 200 && responseCode < 300)) {
+        if (responseCode >= 300 && responseCode < 400) {
+            URL newURL = handleRedirect(responseCode, connection);
+            return beginOrResumeUploadFromURL(upload, newURL);
+        }
+        else if (!(responseCode >= 200 && responseCode < 300)) {
             throw new ProtocolException(
                     "unexpected status code (" + responseCode + ") while resuming upload", connection);
         }
@@ -382,5 +391,21 @@ public class TusClient {
         if (resumingEnabled && removeFingerprintOnSuccessEnabled) {
             urlStore.remove(upload.getFingerprint());
         }
+    }
+
+    private URL handleRedirect(int responseCode, HttpURLConnection connection) throws IOException, ProtocolException {
+        URL newURL;
+        switch (responseCode) {
+            case 307:
+            case 308:
+                newURL = new URL(connection.getHeaderField("Location"));
+                break;
+            default:
+                throw new ProtocolException(
+                        "unexpected redirect status code: "+responseCode, connection
+                );
+        }
+
+        return newURL;
     }
 }
